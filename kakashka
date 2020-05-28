@@ -1,0 +1,225 @@
+import React from 'react';
+import styled from 'styled-components';
+import { useTranslation } from 'react-i18next';
+
+import Box from '@platf/core/components/Box/Box';
+import Flex from '@platf/core/components/Flex/Flex';
+import Footer from '@platf/markswebb-uikit/Modal/Footer';
+import Button from '@platf/markswebb-uikit/Button';
+import { Paragraph } from '@platf/markswebb-uikit/Typography';
+import Header from '@platf/markswebb-uikit/Modal/Header';
+import SearchInput from '@platf/markswebb-uikit/SearchInput';
+import SortByHeader from '@/components/SortByHeader';
+import InfiniteScrollableBox from '@platf/markswebb-uikit/ScrollableBox/InfiniteScrollableBox';
+import useSwitcher from '@platf/core/hooks/common/useSwitcher';
+import { TopIcon } from '@platf/markswebb-uikit/ExpandPanel';
+import GridRowConnector from '@platf/core/connectors/gridRowSelect';
+import ActionConnector from '@platf/core/connectors/action';
+import useTheme from '@platf/core/hooks/common/useTheme';
+
+import EmptyList from '@/components/DictionaryContainer/EmptyList';
+import GridConnector from '@platf/core/connectors/grid';
+import Divider from '@platf/markswebb-uikit/Divider';
+import Hoverable from '@platf/markswebb-uikit/Hoverable';
+
+const LabelWrapper = styled(Box)`
+  flex-grow: 1;
+  flex-basis: 0;
+`;
+
+const ActionConnectedWrapper = action => (
+  <ActionConnector component={React.Fragment} {...action} />
+);
+
+const GridItem = ({ fields, columnSizes, columns }) => (
+  <Hoverable cursor="pointer">
+    <Flex w="100%" padding="17px 20px">
+      {columns.map(column => (
+        <Box w={columnSizes[column]} p="0 10px">
+          <Paragraph {...fields[column]} />
+        </Box>
+      ))}
+    </Flex>
+  </Hoverable>
+);
+
+const findParentItem = (currentItem, Items) => {
+  const { parentId } = currentItem;
+  return !Items.find(item => item.id === parentId);
+};
+
+const groupByParents = array =>
+  array.reduce((acc, item) => {
+    const parentId =
+      item.parentId === undefined || findParentItem(item, array)
+        ? 'roots'
+        : item.parentId;
+
+    if (!acc[parentId]) {
+      acc[parentId] = [];
+    }
+
+    acc[parentId].push(item);
+    return acc;
+  }, {});
+
+const createTree = (array, rootNodes = {}, prepareNode) => {
+  const tree = [];
+
+  Object.values(rootNodes).forEach(node => {
+    const childrens = array[node.id];
+
+    if (childrens) {
+      tree.push(prepareNode(node, createTree(array, childrens, prepareNode)));
+    } else {
+      tree.push(prepareNode(node));
+    }
+  });
+  return tree;
+};
+
+const initPrepareNode = configProps => (node, childrens = null) => ({
+  ...node,
+  ...configProps,
+  items: childrens
+});
+
+const correctTreeGrid = grid => {
+  const prepareNode = initPrepareNode(grid);
+  const { roots, ...restGroup } = groupByParents(grid.items);
+  return createTree(restGroup, roots, prepareNode);
+};
+
+const TreeDictionary = ({
+  actions,
+  fields,
+  grid,
+  title,
+  columnSizes,
+  columns
+}) => {
+  const { t } = useTranslation('paymentAnalytics');
+
+  grid.items.forEach(item => {
+    item.id = item.fields.id;
+    item.parentId = item.fields.parentId.componentParams.value;
+  });
+
+  const correctGrid = {
+    ...grid,
+    items: correctTreeGrid(grid)
+  };
+  const { colors } = useTheme();
+
+  const GridConnectedRow = field => (
+    <Box backgroundColor={field.isSelected ? colors.S300 : 'none'}>
+      <ActionConnectedWrapper {...actions.ok}>
+        <GridRowConnector
+          component={GridItem}
+          shouldShowLoader={false}
+          columnSizes={columnSizes}
+          columns={columns}
+          {...field}
+        />
+      </ActionConnectedWrapper>
+    </Box>
+  );
+
+  const nodeItem = correctRow => {
+    return (
+      <GridConnector
+        component={GridConnectedRow}
+        emptyComponent={EmptyList}
+        isDictionary
+        columnSizes={columnSizes}
+        {...correctRow}
+      />
+    );
+  };
+
+  const Item = row => {
+    const correctRow = {
+      ...row,
+      items: [
+        {
+          actions: row.actions,
+          fields: row.fields
+        }
+      ]
+    };
+
+    return (
+      <Box pl="18.5px">
+        <Divider color={colors.S300} />
+        {row.items ? (
+          <ExpandItem key={row.id} label={nodeItem(correctRow)} row={row} />
+        ) : (
+          <Box>
+            <GridConnector
+              component={GridConnectedRow}
+              emptyComponent={EmptyList}
+              isDictionary
+              columnSizes={columnSizes}
+              {...correctRow}
+            />
+          </Box>
+        )}{' '}
+      </Box>
+    );
+  };
+
+  const ExpandItem = ({ label, row }) => {
+    const { isOn: isExpanded, toggle } = useSwitcher();
+    console.log(isExpanded);
+
+    return (
+      <Box>
+        <Flex
+          onClick={toggle}
+          align="flex-start"
+          justify="flex-start"
+          cursor="pointer"
+        >
+          <Box mt="7.5px" mr="7.5px">
+            <TopIcon up={isExpanded} />
+          </Box>
+          <LabelWrapper>{label}</LabelWrapper>
+        </Flex>
+        {isExpanded && <Box pl="21px">{row.items.map(Item)}</Box>}
+      </Box>
+    );
+  };
+
+  return (
+    <Box width="800px">
+      <Header title={t(`${title}`)} />
+      <Flex ml="40px" mt="28px">
+        <SearchInput {...fields.search} />
+      </Flex>
+      <Box m="23px 40px 0 40px" p="6px 0 0 30px">
+        <SortByHeader
+          directionField={fields.sortDesc}
+          sortByField={fields.sortBy}
+          fieldSizes={columnSizes}
+        />
+      </Box>
+      <Box className="dictionarySelectForm" padding="0 40px 0 30px">
+        <InfiniteScrollableBox {...actions.loadMore} height="330px" custom>
+          <Box>
+            <GridConnector
+              component={Item}
+              emptyComponent={EmptyList}
+              isDictionary
+              {...correctGrid}
+            />
+          </Box>
+        </InfiniteScrollableBox>
+      </Box>
+      <Footer
+        right={[<Button {...actions.close} />, <Button {...actions.ok} />]}
+      />
+    </Box>
+  );
+};
+
+export default TreeDictionary;
